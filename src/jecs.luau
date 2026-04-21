@@ -209,6 +209,7 @@ type world = {
 	each: (self: world, id: i53) -> () -> i53,
 	children: (self: world, id: i53) -> () -> i53,
 	query: (world, ...i53) -> Query<...any>,
+	query_targets: (world, i53) -> () -> (i53?, i53?, i53?),
 
 	added: (world, i53, (e: i53, id: i53, value: any?) -> ()) -> () -> (),
 	changed: (world, i53, (e: i53, id: i53, value: any?) -> ()) -> () -> (),
@@ -335,6 +336,8 @@ export type World = {
 			Component<H>,
 			...Component<any>
 		) -> Query<A, B, C, D, E, F, G, H>),
+
+	query_targets: <A>(World, Component<A>) -> () -> (Entity, A, Component<A>)
 }
 
 export type Record = {
@@ -3354,6 +3357,102 @@ local function world_new(DEBUG: boolean?)
 		end
 	end
 
+	local NOOP = NOOP :: () -> (i53?, i53?, i53?)
+
+	local function world_query_targets(world: World, relation: i53): () -> (i53?, i53?, i53?)
+		local r = (ECS_PAIR(relation, EcsWildcard) :: unknown) :: Component
+		local idr = world.component_index[r]
+		if not idr then
+			return NOOP 
+		end
+
+		local query = {
+			world = world,
+			ids = { r },
+			filter_with = { r },
+		}
+
+		local compatible_archetypes_u = query_archetypes(query :: query)
+		local last_archetype_u = 1
+		local archetype_u = compatible_archetypes_u[1]
+
+		if not archetype_u then
+			return NOOP
+		end
+
+		local entities_u = archetype_u.entities
+		local i_u = #entities_u
+		local archetype_types = archetype_u.types
+
+		local columns_u = archetype_u.columns
+		local base_u = 0
+		local col_i_u = 0
+		local col_end_u = 0
+
+		do
+			local count = idr.counts[archetype_u.id]
+			if count then
+				base_u = idr.records[archetype_u.id]
+				col_i_u = base_u
+				col_end_u = base_u + count
+			end
+		end
+
+		return function(): (i53?, any?, any?)
+			local entities = entities_u
+			local e = entities[i_u]
+
+			while e == nil do
+				last_archetype_u += 1
+				local archetype = compatible_archetypes_u[last_archetype_u]
+				archetype_u = archetype
+
+				if not archetype then
+					return nil
+				end
+
+				entities = archetype.entities
+				i_u = #entities
+				if i_u == 0 then
+					continue
+				end
+
+				local count = idr.counts[archetype.id]
+				if not count then
+					e = nil
+					continue
+				end
+
+				entities_u = entities
+				columns_u = archetype.columns
+				archetype_types = archetype.types
+
+				base_u = idr.records[archetype.id]
+				col_i_u = base_u
+				col_end_u = base_u + count
+
+				e = entities[i_u]
+			end
+
+			local row = i_u
+
+			local columns = columns_u
+			local col_i = col_i_u
+
+			local value = columns[col_i][row]
+
+			col_i += 1
+			if col_i == col_end_u then
+				col_i = base_u
+				i_u -= 1
+			end
+
+			col_i_u = col_i
+
+			return e, value, ECS_PAIR(relation, ECS_PAIR_SECOND(archetype_types[col_i]))
+		end
+	end
+
 	local function world_parent(world: world, entity: i53): i53?
 		return world_target(world, entity, EcsChildOf, 0)
 	end
@@ -3772,6 +3871,7 @@ local function world_new(DEBUG: boolean?)
 
 	world.entity = world_entity
 	world.query = world_query :: any
+	world.query_targets = world_query_targets :: any
 	world.remove = world_remove
 	world.clear = world_clear
 	-- world.purge = world_purge

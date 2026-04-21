@@ -3449,7 +3449,7 @@ local function world_new(DEBUG: boolean?)
 
 			col_i_u = col_i
 
-			return e, value, ECS_PAIR(relation, ECS_PAIR_SECOND(archetype_types[col_i]))
+			return e, value, ECS_PAIR(relation, archetype_types[col_i])
 		end
 	end
 
